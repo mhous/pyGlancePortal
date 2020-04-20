@@ -22,11 +22,11 @@ class PyGlancePortal:
             "wifi_password": secrets["password"],
             "aio_username": secrets["aio_username"],
             "aio_key": secrets["aio_key"],
-            "forecast_url": secrets["darksky_api_forecast"],
-            "twitch_url": secrets["twitch_api_streams"],
+            "darksky_key": secrets["darksky_api_key"],
+            "darksky_url": secrets["darksky_api_forecast"],
             "twitch_key": secrets["twitch_api_key"],
+            "twitch_secret": secrets["twitch_api_secret"],
             "twitch_streamers": secrets["twitch_api_streamers"],
-            "mixer_url": secrets["mixer_api_streams"],
             "mixer_key": secrets["mixer_api_key"],
             "mixer_streamers": secrets["mixer_api_streamers"],
             "nhl_url": secrets["sports_api_nhl"],
@@ -48,6 +48,7 @@ class PyGlancePortal:
         self._debug_total_error_counter = 0
         self._today = 0
         self._updated = ""
+        self._twitch_bearer_token = ""
         self._display_groups = {}
         self.reset_display_groups()
         
@@ -90,26 +91,42 @@ class PyGlancePortal:
         return(days[wday_num%7])
 
     def fetch_datetime(self):
-        r = self._wifi_client.get("https://io.adafruit.com/api/v2/" + self._settings["aio_username"] + "/integrations/time/struct.json", headers={"X-AIO-KEY":self._settings["aio_key"]})
+        url = "https://io.adafruit.com/api/v2/{aio_username}/integrations/time/struct.json"
+        r = self._wifi_client.get(url.format(aio_username=self._settings["aio_username"]), headers={"X-AIO-KEY":self._settings["aio_key"]})
         t = r.json()
         return time.struct_time((t["year"], t["mon"], t["mday"], t["hour"], t["min"], t["sec"], t["wday"], t["yday"], t["isdst"]))
 
     def fetch_forecast(self):
-        r = self._wifi_client.get(self._settings["forecast_url"])
+        url = self._settings["darksky_url"]
+        r = self._wifi_client.get(url.format(darksky_key=self._settings["darksky_key"]))
         return self.parse_forecast(r.json())
+
+    def fetch_twitch_bearer_token(self):
+        expires = 0
+        if self._twitch_bearer_token != "":
+            exp = self._wifi_client.get("https://id.twitch.tv/oauth2/validate", headers={"Authorization":"OAuth "+self._twitch_bearer_token})
+            expires = exp.json()["expires_in"]
+            print("Twitch bearer token expires in " + str(expires))
+        if self._twitch_bearer_token == "" or expires < 864000: # Refresh token if less than 1 week until expiry
+            print("Fetching new Twitch bearer token")
+            url = "https://id.twitch.tv/oauth2/token?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
+            r = self._wifi_client.post(url.format(client_id=self._settings["twitch_key"], client_secret=self._settings["twitch_secret"]))
+            self._twitch_bearer_token = r.json()["access_token"]
+        return self._twitch_bearer_token
 
     def fetch_twitch_streams(self):
         streamers = self._settings["twitch_streamers"].split(",")
         qsparam = "user_login="
         for idx,x in enumerate(streamers):
             streamers[idx] = qsparam + streamers[idx]
-        r = self._wifi_client.get(self._settings["twitch_url"] + "&".join(streamers), headers={"Client-ID":self._settings["twitch_key"]})
+        t = self.fetch_twitch_bearer_token()
+        r = self._wifi_client.get("https://api.twitch.tv/helix/streams?" + "&".join(streamers), headers={"Client-ID":self._settings["twitch_key"],"Authorization":"Bearer "+t})
         return self.parse_twitch_streams(r.json())
     
     def fetch_mixer_streams(self):
         streamers = list()
         for idx,x in enumerate(self._settings["mixer_streamers"].split(",")):
-            s = self._settings["mixer_url"] + x
+            s = "https://mixer.com/api/v1/channels/" + x
             r = self._wifi_client.get(s, headers={"Client-ID":self._settings["mixer_key"]})
             if(self.parse_mixer_streams(r.json())):
                 streamers.append(x)

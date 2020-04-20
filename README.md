@@ -71,7 +71,6 @@ while True:
 
 ## Roadmap
 * This project uses the Dark Sky APIs, and after Apple's acquisition [will no longer be available after July 1, 2021](https://blog.darksky.net/dark-sky-has-a-new-home/). Thus weather functionality will require an alternative API.
-* The Twitch API will [require an OAuth token by April 30, 2020](https://discuss.dev.twitch.tv/t/requiring-oauth-for-helix-twitch-api-endpoints/23916), which necessitates an update.
 
 ## Credits
 ESPN doesn't have a developer API, so this was inspired by the works of [@andr3w321](https://github.com/andr3w321) on [espn_scraper](https://github.com/andr3w321/espn_scraper) and [@akeaswaran](https://github.com/akeaswaran)'s [documentation](https://gist.github.com/akeaswaran/b48b02f1c94f873c6655e7129910fc3b).

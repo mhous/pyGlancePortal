@@ -10,12 +10,11 @@ secrets = {
     "aio_username" : "", # Adafruit IO username
     "aio_key" : "", # Adafruit IO key
     "darksky_api_key" : "", # Dark Sky API key
-    "darksky_api_forecast" : "https://api.darksky.net/forecast/<darksky_api_key>/37.8267,-122.4233?exclude=minutely,hourly,alerts,flags", # Update API call with key and location
+    "darksky_api_forecast" : "https://api.darksky.net/forecast/{darksky_key}/37.8267,-122.4233?exclude=minutely,hourly,alerts,flags", # Update API call with location
     "twitch_api_key" : "", # Twitch API key
-    "twitch_api_streams" : "https://api.twitch.tv/helix/streams?",
+    "twitch_api_secret" : "", # Twitch API secret
     "twitch_api_streamers" : "", # Comma-delimited list of Twitch streamer handles
     "mixer_api_key" : "", # Mixer API key
-    "mixer_api_streams" : "https://mixer.com/api/v1/channels/",
     "mixer_api_streamers" : "", # Comma-delimited list of Mixer streamer handles
     "sports_api_mlb" : "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=baseball&league=mlb&region=us&lang=en&contentorigin=espn&tz=America/New_York&team=",
     "sports_api_mlb_teams" : "", # Comma-delimited list of team abbreviations
