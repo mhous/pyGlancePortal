@@ -27,8 +27,6 @@ class PyGlancePortal:
             "twitch_key": secrets["twitch_api_key"],
             "twitch_secret": secrets["twitch_api_secret"],
             "twitch_streamers": secrets["twitch_api_streamers"],
-            "mixer_key": secrets["mixer_api_key"],
-            "mixer_streamers": secrets["mixer_api_streamers"],
             "nhl_url": secrets["sports_api_nhl"],
             "nhl_teams": secrets["sports_api_nhl_teams"],
             "nfl_url": secrets["sports_api_nfl"],
@@ -38,8 +36,7 @@ class PyGlancePortal:
             "prem_url": secrets["sports_api_prem"],
             "prem_teams": secrets["sports_api_prem_teams"],
             "default_weather_icon": "/icons/weather/unknown.bmp",
-            "default_twitch_icon": "/icons/streamers/twitch.bmp",
-            "default_mixer_icon": "/icons/streamers/mixer.bmp"
+            "default_twitch_icon": "/icons/streamers/twitch.bmp"
         }
 
         self._debug = debug
@@ -123,15 +120,6 @@ class PyGlancePortal:
         r = self._wifi_client.get("https://api.twitch.tv/helix/streams?" + "&".join(streamers), headers={"Client-ID":self._settings["twitch_key"],"Authorization":"Bearer "+t})
         return self.parse_twitch_streams(r.json())
     
-    def fetch_mixer_streams(self):
-        streamers = list()
-        for idx,x in enumerate(self._settings["mixer_streamers"].split(",")):
-            s = "https://mixer.com/api/v1/channels/" + x
-            r = self._wifi_client.get(s, headers={"Client-ID":self._settings["mixer_key"]})
-            if(self.parse_mixer_streams(r.json())):
-                streamers.append(x)
-        return streamers
-
     def fetch_league(self, league, teams, league_url, group, numlive):
         if len(teams) == 0:
             print("No teams for " + league + ". Skipping.")
@@ -174,9 +162,6 @@ class PyGlancePortal:
                 if x["type"] == "live":
                     streamers.append(x["user_name"])
         return streamers
-
-    def parse_mixer_streams(self, streams_json):
-        return streams_json["online"] == True
 
     def parse_team(self, league, team, team_json):
         t = ""
@@ -316,30 +301,7 @@ class PyGlancePortal:
             print("Failed to get twitch streamer data\n", e)
             self._wifi_client.reset()
             time.sleep(5)
-
-        ## Get Mixer Streamer Data
-        try:
-            streamerdata = self.fetch_mixer_streams()
-            print(streamerdata)
-
-            for idx,x in enumerate(streamerdata):
-                streamer_img = "/icons/streamers/"+ x + ".bmp"
-                if self._debug:
-                    print(streamer_img)
-                try:
-                    streamer_file = open(streamer_img, "rb")
-                except OSError as e:
-                    streamer_file = open(self._settings["default_mixer_icon"], "rb")
-                img = displayio.OnDiskBitmap(streamer_file)
-                img_sprite = displayio.TileGrid(img, pixel_shader=displayio.ColorConverter(), x=streamer_index*34, y=2)
-                self._display_groups["stream_group"].append(img_sprite)
-                streamer_index = streamer_index + 1
-        except (ValueError, RuntimeError) as e:
-            self._debug_error_counter += 1
-            print("Failed to get mixer streamer data\n", e)
-            self._wifi_client.reset()
-            time.sleep(5)
-    
+ 
     def build_display(self):
         self._led.value = True
         time.sleep(1.0)

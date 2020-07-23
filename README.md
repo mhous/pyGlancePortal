@@ -16,7 +16,6 @@ pyGlancePortal uses several external APIs, some of which require developer accou
 * [Adafruit IO](https://io.adafruit.com/)
 * [Dark Sky](https://darksky.net/dev)
 * [Twitch](https://dev.twitch.tv/)
-* [Mixer](https://mixerdev.azurewebsites.net/)
 * ESPN
 
 ## Icons

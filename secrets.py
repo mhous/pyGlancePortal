@@ -14,8 +14,6 @@ secrets = {
     "twitch_api_key" : "", # Twitch API key
     "twitch_api_secret" : "", # Twitch API secret
     "twitch_api_streamers" : "", # Comma-delimited list of Twitch streamer handles
-    "mixer_api_key" : "", # Mixer API key
-    "mixer_api_streamers" : "", # Comma-delimited list of Mixer streamer handles
     "sports_api_mlb" : "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=baseball&league=mlb&region=us&lang=en&contentorigin=espn&tz=America/New_York&team=",
     "sports_api_mlb_teams" : "", # Comma-delimited list of team abbreviations
     "sports_api_nfl" : "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=football&league=nfl&region=us&lang=en&contentorigin=espn&tz=America/New_York&team=",
