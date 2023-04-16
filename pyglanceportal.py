@@ -18,23 +18,27 @@ except ImportError:
 class PyGlancePortal:
     def __init__(self, debug=False):
         self._settings = {
-            "wifi_ssid": secrets["ssid"],
-            "wifi_password": secrets["password"],
+            "ssid": secrets["ssid"],
+            "password": secrets["password"],
+            "timezone": secrets["timezone"],
             "aio_username": secrets["aio_username"],
             "aio_key": secrets["aio_key"],
-            "darksky_key": secrets["darksky_api_key"],
-            "darksky_url": secrets["darksky_api_forecast"],
-            "twitch_key": secrets["twitch_api_key"],
-            "twitch_secret": secrets["twitch_api_secret"],
-            "twitch_streamers": secrets["twitch_api_streamers"],
-            "nhl_url": secrets["sports_api_nhl"],
-            "nhl_teams": secrets["sports_api_nhl_teams"],
-            "nfl_url": secrets["sports_api_nfl"],
-            "nfl_teams": secrets["sports_api_nfl_teams"],
-            "mlb_url": secrets["sports_api_mlb"],
-            "mlb_teams": secrets["sports_api_mlb_teams"],
-            "prem_url": secrets["sports_api_prem"],
-            "prem_teams": secrets["sports_api_prem_teams"],
+            "pirateweather_api_key": secrets["pirateweather_api_key"],
+            "pirateweather_api_forecast": secrets["pirateweather_api_forecast"],
+            "twitch_api_key": secrets["twitch_api_key"],
+            "twitch_api_secret": secrets["twitch_api_secret"],
+            "twitch_api_streamers": secrets["twitch_api_streamers"],
+            "sports_leagues": secrets["sports_leagues"],
+            "sports_api_nhl": secrets["sports_api_nhl"],
+            "sports_api_nhl_teams": secrets["sports_api_nhl_teams"],
+            "sports_api_nfl": secrets["sports_api_nfl"],
+            "sports_api_nfl_teams": secrets["sports_api_nfl_teams"],
+            "sports_api_mlb": secrets["sports_api_mlb"],
+            "sports_api_mlb_teams": secrets["sports_api_mlb_teams"],
+            "sports_api_prem": secrets["sports_api_prem"],
+            "sports_api_prem_teams": secrets["sports_api_prem_teams"],
+            "sports_api_mls": secrets["sports_api_mls"],
+            "sports_api_mls_teams": secrets["sports_api_mls_teams"],
             "default_weather_icon": "/icons/weather/unknown.bmp",
             "default_twitch_icon": "/icons/streamers/twitch.bmp"
         }
@@ -43,59 +47,73 @@ class PyGlancePortal:
         self._debug_refresh_counter = 0
         self._debug_error_counter = 0
         self._debug_total_error_counter = 0
+        self._debug_reset_counter = 0
+        self._debug_total_reset_counter = 0
+
         self._today = 0
         self._updated = ""
         self._twitch_bearer_token = ""
         self._display_groups = {}
         self.reset_display_groups()
-        
 
-        # PyPortal ESP32 Setup
-        esp32_cs = digitalio.DigitalInOut(board.ESP_CS)
-        esp32_ready = digitalio.DigitalInOut(board.ESP_BUSY)
-        esp32_reset = digitalio.DigitalInOut(board.ESP_RESET)
-        spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
-        esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
-        status_light = neopixel.NeoPixel(board.NEOPIXEL, 1, brightness=0.2)
+        # PyPortal Board Setup
+        board.DISPLAY.brightness = 1
+        self._status_light = neopixel.NeoPixel(board.NEOPIXEL, 1, brightness=0.2)
         self._led = digitalio.DigitalInOut(board.D13)
         self._led.direction = digitalio.Direction.OUTPUT
+
+        # PyPortal ESP32 Setup
+        self._esp32_cs = digitalio.DigitalInOut(board.ESP_CS)
+        self._esp32_ready = digitalio.DigitalInOut(board.ESP_BUSY)
+        self._esp32_reset = digitalio.DigitalInOut(board.ESP_RESET)
+        self._spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
+        self._esp = None
+
+        self._wifi_client = None
+
+        self.connect_wifi()
+
+    def connect_wifi(self):
+        # ESP32 Setup
+        self._esp = adafruit_esp32spi.ESP_SPIcontrol(self._spi, self._esp32_cs, self._esp32_ready, self._esp32_reset)
+
+        if self._esp.status == adafruit_esp32spi.WL_IDLE_STATUS:
+            print("ESP32 found and in idle mode")
+        print("Firmware vers.", self._esp.firmware_version)
+        print("MAC addr:", [hex(i) for i in self._esp.MAC_address])
 
         # WiFi Setup
         if self._debug:
             print("Visible SSIDs:")
-            for ap in esp.scan_networks():
+            for ap in self._esp.scan_networks():
                 print("%s  RSSI: %d" % (str(ap["ssid"], "utf-8"), ap["rssi"]))
-        
+
         print("Connecting configured WiFi...")
-        while not esp.is_connected:
+        while not self._esp.is_connected:
             try:
-                esp.connect(secrets)
+                self._esp.connect_AP(self._settings["ssid"], self._settings["password"])
             except RuntimeError as e:
                 print("Could not connect to WiFi, retrying: ",e)
                 continue
 
-        print("Connected to:", str(esp.ssid, "utf-8"), "  RSSI:", esp.rssi)
-        print("IP address:", esp.pretty_ip(esp.ip_address))
+        print("Connected to:", str(self._esp.ssid, "utf-8"), "  RSSI:", self._esp.rssi)
+        print("IP address:", self._esp.pretty_ip(self._esp.ip_address))
 
-        self._wifi_client = adafruit_esp32spi_wifimanager.ESPSPI_WiFiManager(esp, secrets, status_light)
-
-        # PyPortal Board Setup
-        board.DISPLAY.auto_brightness = False
-        board.DISPLAY.brightness = 1
+        self._wifi_client = adafruit_esp32spi_wifimanager.ESPSPI_WiFiManager(self._esp, secrets, self._status_light)
 
     def get_dayname(self, wday_num):
         days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
         return(days[wday_num%7])
 
     def fetch_datetime(self):
-        url = "https://io.adafruit.com/api/v2/{aio_username}/integrations/time/struct.json"
+        url = "https://io.adafruit.com/api/v2/{aio_username}/integrations/time/struct.json?tz=" + self._settings["timezone"]
         r = self._wifi_client.get(url.format(aio_username=self._settings["aio_username"]), headers={"X-AIO-KEY":self._settings["aio_key"]})
         t = r.json()
         return time.struct_time((t["year"], t["mon"], t["mday"], t["hour"], t["min"], t["sec"], t["wday"], t["yday"], t["isdst"]))
 
     def fetch_forecast(self):
-        url = self._settings["darksky_url"]
-        r = self._wifi_client.get(url.format(darksky_key=self._settings["darksky_key"]))
+        url = self._settings["pirateweather_api_forecast"]
+        r = self._wifi_client.get(url.format(pirateweather_api_key=self._settings["pirateweather_api_key"]))
         return self.parse_forecast(r.json())
 
     def fetch_twitch_bearer_token(self):
@@ -107,26 +125,26 @@ class PyGlancePortal:
         if self._twitch_bearer_token == "" or expires < 864000: # Refresh token if less than 1 week until expiry
             print("Fetching new Twitch bearer token")
             url = "https://id.twitch.tv/oauth2/token?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
-            r = self._wifi_client.post(url.format(client_id=self._settings["twitch_key"], client_secret=self._settings["twitch_secret"]))
+            r = self._wifi_client.post(url.format(client_id=self._settings["twitch_api_key"], client_secret=self._settings["twitch_api_secret"]))
             self._twitch_bearer_token = r.json()["access_token"]
         return self._twitch_bearer_token
 
     def fetch_twitch_streams(self):
-        streamers = self._settings["twitch_streamers"].split(",")
+        streamers = self._settings["twitch_api_streamers"].split(",")
         qsparam = "user_login="
         for idx,x in enumerate(streamers):
             streamers[idx] = qsparam + streamers[idx]
         t = self.fetch_twitch_bearer_token()
-        r = self._wifi_client.get("https://api.twitch.tv/helix/streams?" + "&".join(streamers), headers={"Client-ID":self._settings["twitch_key"],"Authorization":"Bearer "+t})
+        r = self._wifi_client.get("https://api.twitch.tv/helix/streams?" + "&".join(streamers), headers={"Client-ID":self._settings["twitch_api_key"],"Authorization":"Bearer "+t})
         return self.parse_twitch_streams(r.json())
-    
+
     def fetch_league(self, league, teams, league_url, group, numlive):
         if len(teams) == 0:
             print("No teams for " + league + ". Skipping.")
             return numlive
         for idx,x in enumerate(teams.split(",")):
             if self._debug:
-                print(idx, " ", x, " ", league)
+                print(idx, " ", league, " ", x)
             team_data = self.fetch_team(league_url, league, x)
             if len(team_data) > 0:
                 team_icon = "/icons/sports/"+ team_data + ".bmp"
@@ -141,7 +159,7 @@ class PyGlancePortal:
                 group.append(img_sprite)
                 numlive = numlive + 1
             elif self._debug:
-                print("No game for " + x + " " + league)
+                print("No game for " + league + " " + x)
         return numlive
 
     def fetch_team(self, api_url, league, team):
@@ -168,17 +186,16 @@ class PyGlancePortal:
         if team_json["sports"][0]["leagues"][0]["events"][0]["status"] == "in":
             t = league + "/" + team
             if self._debug:
-                print(team_json["sports"][0]["leagues"][0]["events"][0]["shortName"])
-                print(team_json["sports"][0]["leagues"][0]["events"][0]["status"])
+                print("game:" + team_json["sports"][0]["leagues"][0]["events"][0]["shortName"] + " status:" + team_json["sports"][0]["leagues"][0]["events"][0]["status"])
         return t
-    
+
     def reset_display_groups(self):
         self._display_groups = {
-            "weather_group": displayio.Group(max_size=6),
-            "days_group": displayio.Group(max_size=6),
-            "temp_group": displayio.Group(max_size=6),
-            "stream_group": displayio.Group(max_size=6),
-            "sports_group": displayio.Group(max_size=6),
+            "weather_group": displayio.Group(),
+            "days_group": displayio.Group(),
+            "temp_group": displayio.Group(),
+            "stream_group": displayio.Group(),
+            "sports_group": displayio.Group(),
             "updated_group":  displayio.Group(),
             "memory_group": displayio.Group(),
             "error_group": displayio.Group()
@@ -200,10 +217,10 @@ class PyGlancePortal:
             self._updated = "u:" + str(datetime.tm_hour) + ":" + formatted_min
         except (ValueError, RuntimeError) as e:
             self._debug_error_counter += 1
-            print("Failed to get time data, retrying\n", e)
+            print("Failed to get time data\n", e)
             self._wifi_client.reset()
             time.sleep(5)
-    
+
     def build_weather(self):
         try:
             forecastdata = self.fetch_forecast()
@@ -231,50 +248,25 @@ class PyGlancePortal:
                 day_area.x = 22+(idx*50)
                 day_area.y = 90
                 self._display_groups["days_group"].append(day_area)
-        except (ValueError, RuntimeError) as e:
+        except (KeyError, ValueError, RuntimeError) as e:
             self._debug_error_counter += 1
-            print("Failed to get forecast data, retrying\n", e)
+            print("Failed to get forecast data\n", e)
             self._wifi_client.reset()
             time.sleep(5)
-    
+
     def build_sports(self):
         live_teams = 0
+        leagues = self._settings["sports_leagues"].split(",")
 
-        try:
-            current_league = "nhl"
-            live_teams = self.fetch_league(current_league, self._settings["nhl_teams"], self._settings["nhl_url"], self._display_groups["sports_group"], live_teams)
-        except (KeyError, ValueError, RuntimeError) as e:
-            self._debug_error_counter += 1
-            print("Failed to get " + current_league + " data\n", e)
-            self._wifi_client.reset()
-            time.sleep(5)
-
-        try:
-            current_league = "nfl"
-            live_teams = self.fetch_league(current_league, self._settings["nfl_teams"], self._settings["nfl_url"], self._display_groups["sports_group"], live_teams)
-        except (KeyError, ValueError, RuntimeError) as e:
-            self._debug_error_counter += 1
-            print("Failed to get " + current_league + " data\n", e)
-            self._wifi_client.reset()
-            time.sleep(5)
-
-        try:
-            current_league = "mlb"
-            live_teams = self.fetch_league(current_league, self._settings["mlb_teams"], self._settings["mlb_url"], self._display_groups["sports_group"], live_teams)
-        except (KeyError, ValueError, RuntimeError) as e:
-            self._debug_error_counter += 1
-            print("Failed to get " + current_league + " data\n", e)
-            self._wifi_client.reset()
-            time.sleep(5)
-
-        # try:
-        #     current_league = "prem"
-        #     live_teams = self.fetch_league(current_league, self._settings["prem_teams"], self._settings["prem_url"], self._display_groups["sports_group"], live_teams)
-        # except (KeyError, ValueError, RuntimeError) as e:
-        #     self._debug_error_counter += 1
-        #     print("Failed to get " + current_league + " data\n", str(e))
-        #     self._wifi_client.reset()
-        #     time.sleep(5)
+        for idx,x in enumerate(leagues):
+            try:
+                current_league = x
+                live_teams = self.fetch_league(current_league, self._settings["sports_api_" + x + "_teams"], self._settings["sports_api_" + x], self._display_groups["sports_group"], live_teams)
+            except (KeyError, ValueError, RuntimeError) as e:
+                self._debug_error_counter += 1
+                print("Failed to get " + current_league + " data\n", e)
+                self._wifi_client.reset()
+                time.sleep(5)
 
     def build_streamers(self):
         streamer_index = 0
@@ -296,62 +288,78 @@ class PyGlancePortal:
                 img_sprite = displayio.TileGrid(img, pixel_shader=displayio.ColorConverter(), x=streamer_index*34, y=2)
                 self._display_groups["stream_group"].append(img_sprite)
                 streamer_index = streamer_index + 1
-        except (ValueError, RuntimeError) as e:
+        except (KeyError, ValueError, RuntimeError) as e:
             self._debug_error_counter += 1
             print("Failed to get twitch streamer data\n", e)
             self._wifi_client.reset()
             time.sleep(5)
- 
+
     def build_display(self):
-        self._led.value = True
-        time.sleep(1.0)
+        try:
+            self._led.value = True
+            time.sleep(1)
 
-        if self._debug:
-            print("Building display")
+            if self._debug:
+                print("Building display")
 
-        self.reset_display_groups()
-        self._debug_error_counter = 0
-        self._debug_refresh_counter += 1
+            self.reset_display_groups()
+            self._debug_error_counter = 0
+            self._debug_refresh_counter += 1
 
-        self.build_datetime()
-        self.build_weather()
-        self.build_streamers()
-        self.build_sports()
+            self.build_datetime()
+            self.build_weather()
+            self.build_streamers()
+            self.build_sports()
 
-        self._debug_total_error_counter += self._debug_error_counter
+            self._debug_total_error_counter += self._debug_error_counter
 
-        ## Build Display
-        updated_area = label.Label(terminalio.FONT, text=self._updated)
-        updated_area.x = 265
-        updated_area.y = 230
-        self._display_groups["updated_group"].append(updated_area)
+            ## Build Display
+            updated_area = label.Label(terminalio.FONT, text=self._updated)
+            updated_area.x = 275
+            updated_area.y = 230
+            self._display_groups["updated_group"].append(updated_area)
 
-        if self._debug:
-            memory_area = label.Label(terminalio.FONT, text="a:" + str(gc.mem_alloc()) + " f:" + str(gc.mem_free()))
-            memory_area.x = 10
-            memory_area.y = 230
-            self._display_groups["memory_group"].append(memory_area)
+            if self._debug:
+                memory_area = label.Label(terminalio.FONT, text="a:" + str(gc.mem_alloc()) + " f:" + str(gc.mem_free()))
+                memory_area.x = 10
+                memory_area.y = 230
+                self._display_groups["memory_group"].append(memory_area)
 
-            error_area = label.Label(terminalio.FONT, text="r:"+str(self._debug_refresh_counter) + " e:" + str(self._debug_error_counter) + " te:" + str(self._debug_total_error_counter))
-            error_area.x = 125
-            error_area.y = 230
-            self._display_groups["error_group"].append(error_area)
+                error_area = label.Label(terminalio.FONT, text="r:" +str(self._debug_refresh_counter) + " e:" + str(self._debug_error_counter) + "/" + str(self._debug_total_error_counter) + " r:" + str(self._debug_reset_counter) + "/" + str(self._debug_total_reset_counter))
+                error_area.x = 115
+                error_area.y = 230
+                self._display_groups["error_group"].append(error_area)
 
-        display_group = displayio.Group(max_size=36)
-        display_group.append(self._display_groups["weather_group"])
-        display_group.append(self._display_groups["days_group"])
-        display_group.append(self._display_groups["temp_group"])
-        display_group.append(self._display_groups["stream_group"])
-        display_group.append(self._display_groups["sports_group"])
-        display_group.append(self._display_groups["updated_group"])
+            display_group = displayio.Group()
+            display_group.append(self._display_groups["weather_group"])
+            display_group.append(self._display_groups["days_group"])
+            display_group.append(self._display_groups["temp_group"])
+            display_group.append(self._display_groups["stream_group"])
+            display_group.append(self._display_groups["sports_group"])
+            display_group.append(self._display_groups["updated_group"])
 
-        if self._debug:
-            display_group.append(self._display_groups["memory_group"])
-            display_group.append(self._display_groups["error_group"])
+            if self._debug:
+                display_group.append(self._display_groups["memory_group"])
+                display_group.append(self._display_groups["error_group"])
 
-        board.DISPLAY.show(display_group)
+            board.DISPLAY.show(display_group)
 
-        self._led.value = False
+            self._led.value = False
+            self._debug_reset_counter = 0
 
-        if self._debug:
-            print("Done building display")
+            if self._debug:
+                print("Done building display")
+        except (RuntimeError) as re:
+            print("Error building display\n", re)
+            gc.collect()
+        except (TimeoutError) as te:
+            # Defensive exception handling for TimeoutError: Timed out waiting for SPI char
+            print("Timeout error in building display\n", te)
+            self._debug_reset_counter += 1
+            self._debug_total_reset_counter += 1
+
+            if self._debug_reset_counter <= 3:
+                gc.collect()
+                self._esp.reset()
+                time.sleep(5)
+                self.connect_wifi()
