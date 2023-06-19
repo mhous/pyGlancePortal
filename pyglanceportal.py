@@ -6,7 +6,10 @@ import digitalio
 import terminalio
 import busio
 import neopixel
-from adafruit_esp32spi import adafruit_esp32spi, adafruit_esp32spi_wifimanager
+import adafruit_requests as requests
+from adafruit_esp32spi import adafruit_esp32spi_socket as socket
+from adafruit_esp32spi import adafruit_esp32spi
+from adafruit_esp32spi import adafruit_esp32spi_wifimanager
 from adafruit_display_text import label
 
 try:
@@ -49,6 +52,7 @@ class PyGlancePortal:
         self._debug_total_error_counter = 0
         self._debug_reset_counter = 0
         self._debug_total_reset_counter = 0
+        self._debug_wifi_retry_counter = 0
 
         self._today = 0
         self._updated = ""
@@ -70,6 +74,8 @@ class PyGlancePortal:
         self._esp = None
 
         self._wifi_client = None
+        self._socket = None
+        self._requests = None
 
         self.connect_wifi()
 
@@ -88,18 +94,25 @@ class PyGlancePortal:
             for ap in self._esp.scan_networks():
                 print("%s  RSSI: %d" % (str(ap["ssid"], "utf-8"), ap["rssi"]))
 
+
+        self._debug_wifi_retry_counter = 0
         print("Connecting configured WiFi...")
         while not self._esp.is_connected:
+            self._debug_wifi_retry_counter += 1
             try:
                 self._esp.connect_AP(self._settings["ssid"], self._settings["password"])
-            except RuntimeError as e:
-                print("Could not connect to WiFi, retrying: ",e)
+            except (RuntimeError, ConnectionError) as e:
+                # Defensive exception handling for ConnectionError: Failed to request hostname
+                if self._debug_wifi_retry_counter > 1:
+                    board.DISPLAY.root_group = displayio.CIRCUITPYTHON_TERMINAL
+                print("Could not connect to WiFi, retrying:\n", e)
+                time.sleep(5)
                 continue
 
         print("Connected to:", str(self._esp.ssid, "utf-8"), "  RSSI:", self._esp.rssi)
         print("IP address:", self._esp.pretty_ip(self._esp.ip_address))
 
-        self._wifi_client = adafruit_esp32spi_wifimanager.ESPSPI_WiFiManager(self._esp, secrets, self._status_light)
+        requests.set_socket(socket, self._esp)
 
     def get_dayname(self, wday_num):
         days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
@@ -107,25 +120,25 @@ class PyGlancePortal:
 
     def fetch_datetime(self):
         url = "https://io.adafruit.com/api/v2/{aio_username}/integrations/time/struct.json?tz=" + self._settings["timezone"]
-        r = self._wifi_client.get(url.format(aio_username=self._settings["aio_username"]), headers={"X-AIO-KEY":self._settings["aio_key"]})
+        r = requests.get(url.format(aio_username=self._settings["aio_username"]), headers={"X-AIO-KEY":self._settings["aio_key"]})
         t = r.json()
         return time.struct_time((t["year"], t["mon"], t["mday"], t["hour"], t["min"], t["sec"], t["wday"], t["yday"], t["isdst"]))
 
     def fetch_forecast(self):
         url = self._settings["pirateweather_api_forecast"]
-        r = self._wifi_client.get(url.format(pirateweather_api_key=self._settings["pirateweather_api_key"]))
+        r = requests.get(url.format(pirateweather_api_key=self._settings["pirateweather_api_key"]))
         return self.parse_forecast(r.json())
 
     def fetch_twitch_bearer_token(self):
         expires = 0
         if self._twitch_bearer_token != "":
-            exp = self._wifi_client.get("https://id.twitch.tv/oauth2/validate", headers={"Authorization":"OAuth "+self._twitch_bearer_token})
+            exp = requests.get("https://id.twitch.tv/oauth2/validate", headers={"Authorization":"OAuth "+self._twitch_bearer_token})
             expires = exp.json()["expires_in"]
             print("Twitch bearer token expires in " + str(expires))
         if self._twitch_bearer_token == "" or expires < 864000: # Refresh token if less than 1 week until expiry
             print("Fetching new Twitch bearer token")
             url = "https://id.twitch.tv/oauth2/token?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
-            r = self._wifi_client.post(url.format(client_id=self._settings["twitch_api_key"], client_secret=self._settings["twitch_api_secret"]))
+            r = requests.post(url.format(client_id=self._settings["twitch_api_key"], client_secret=self._settings["twitch_api_secret"]))
             self._twitch_bearer_token = r.json()["access_token"]
         return self._twitch_bearer_token
 
@@ -135,7 +148,7 @@ class PyGlancePortal:
         for idx,x in enumerate(streamers):
             streamers[idx] = qsparam + streamers[idx]
         t = self.fetch_twitch_bearer_token()
-        r = self._wifi_client.get("https://api.twitch.tv/helix/streams?" + "&".join(streamers), headers={"Client-ID":self._settings["twitch_api_key"],"Authorization":"Bearer "+t})
+        r = requests.get("https://api.twitch.tv/helix/streams?" + "&".join(streamers), headers={"Client-ID":self._settings["twitch_api_key"],"Authorization":"Bearer "+t})
         return self.parse_twitch_streams(r.json())
 
     def fetch_league(self, league, teams, league_url, group, numlive):
@@ -163,7 +176,7 @@ class PyGlancePortal:
         return numlive
 
     def fetch_team(self, api_url, league, team):
-        r = self._wifi_client.get(api_url+team)
+        r = requests.get(api_url+team)
         return self.parse_team(league, team, r.json())
 
     def parse_forecast(self, forecast_json):
@@ -218,7 +231,6 @@ class PyGlancePortal:
         except (ValueError, RuntimeError) as e:
             self._debug_error_counter += 1
             print("Failed to get time data\n", e)
-            self._wifi_client.reset()
             time.sleep(5)
 
     def build_weather(self):
@@ -251,7 +263,6 @@ class PyGlancePortal:
         except (KeyError, ValueError, RuntimeError) as e:
             self._debug_error_counter += 1
             print("Failed to get forecast data\n", e)
-            self._wifi_client.reset()
             time.sleep(5)
 
     def build_sports(self):
@@ -265,7 +276,6 @@ class PyGlancePortal:
             except (KeyError, ValueError, RuntimeError) as e:
                 self._debug_error_counter += 1
                 print("Failed to get " + current_league + " data\n", e)
-                self._wifi_client.reset()
                 time.sleep(5)
 
     def build_streamers(self):
@@ -291,7 +301,6 @@ class PyGlancePortal:
         except (KeyError, ValueError, RuntimeError) as e:
             self._debug_error_counter += 1
             print("Failed to get twitch streamer data\n", e)
-            self._wifi_client.reset()
             time.sleep(5)
 
     def build_display(self):
@@ -342,7 +351,7 @@ class PyGlancePortal:
                 display_group.append(self._display_groups["memory_group"])
                 display_group.append(self._display_groups["error_group"])
 
-            board.DISPLAY.show(display_group)
+            board.DISPLAY.root_group = display_group
 
             self._led.value = False
             self._debug_reset_counter = 0
@@ -352,14 +361,18 @@ class PyGlancePortal:
         except (RuntimeError) as re:
             print("Error building display\n", re)
             gc.collect()
-        except (TimeoutError) as te:
+        except (TimeoutError, BrokenPipeError) as te:
             # Defensive exception handling for TimeoutError: Timed out waiting for SPI char
-            print("Timeout error in building display\n", te)
+            # Defensive exception handling for BrokenPipeError: Expected XX but got YY
+            print("TimeoutError/BrokenPipeError in building display, attempt " + str(self._debug_reset_counter) + ", retrying:\n", te)
             self._debug_reset_counter += 1
             self._debug_total_reset_counter += 1
 
-            if self._debug_reset_counter <= 3:
+            if self._debug_reset_counter >= 5:
+                    board.DISPLAY.root_group = displayio.CIRCUITPYTHON_TERMINAL
+
+            if self._debug_reset_counter <= 20:
                 gc.collect()
                 self._esp.reset()
-                time.sleep(5)
+                time.sleep(15)
                 self.connect_wifi()
