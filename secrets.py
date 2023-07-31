@@ -22,7 +22,13 @@ secrets = {
     "sports_api_nhl" : "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=hockey&league=nhl&region=us&lang=en&contentorigin=espn&tz=America/New_York&team=",
     "sports_api_nhl_teams" : "", # Comma-delimited list of team abbreviations
     "sports_api_prem" : "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=soccer&league=eng.1&region=us&lang=en&contentorigin=espn&tz=America/New_York&team=",
-    "sports_api_prem_teams" : "" # Comma-delimited list of team abbreviations,
+    "sports_api_prem_teams" : "", # Comma-delimited list of team abbreviations,
     "sports_api_mls" : "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=soccer&league=usa.1&region=us&lang=en&contentorigin=espn&tz=America/New_York&team=",
-    "sports_api_mls_teams" : "" # Comma-delimited list of team abbreviations
+    "sports_api_mls_teams" : "", # Comma-delimited list of team abbreviations
+    "sports_api_nwsl" : "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=soccer&league=usa.nwsl&region=us&lang=en&contentorigin=espn&tz=America/New_York&team=",
+    "sports_api_nwsl_teams" : "", # Comma-delimited list of team abbreviations
+    "sports_api_usmnt" : "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=soccer&region=us&lang=en&contentorigin=espn&tz=America/New_York&team=",
+    "sports_api_usmnt_teams" : "", # Comma-delimited list of team abbreviations
+    "sports_api_uswnt" : "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=soccer&region=us&lang=en&contentorigin=espn&tz=America/New_York&team=",
+    "sports_api_uswnt_teams" : ""  # Comma-delimited list of team abbreviations
     }

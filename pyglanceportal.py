@@ -42,6 +42,12 @@ class PyGlancePortal:
             "sports_api_prem_teams": secrets["sports_api_prem_teams"],
             "sports_api_mls": secrets["sports_api_mls"],
             "sports_api_mls_teams": secrets["sports_api_mls_teams"],
+            "sports_api_nwsl": secrets["sports_api_nwsl"],
+            "sports_api_nwsl_teams": secrets["sports_api_nwsl_teams"],
+            "sports_api_usmnt": secrets["sports_api_usmnt"],
+            "sports_api_usmnt_teams": secrets["sports_api_usmnt_teams"],
+            "sports_api_uswnt": secrets["sports_api_uswnt"],
+            "sports_api_uswnt_teams": secrets["sports_api_uswnt_teams"],
             "default_weather_icon": "/icons/weather/unknown.bmp",
             "default_twitch_icon": "/icons/streamers/twitch.bmp"
         }
@@ -361,10 +367,11 @@ class PyGlancePortal:
         except (RuntimeError) as re:
             print("Error building display\n", re)
             gc.collect()
-        except (TimeoutError, BrokenPipeError) as te:
+        except (TimeoutError, BrokenPipeError, ConnectionError) as te:
             # Defensive exception handling for TimeoutError: Timed out waiting for SPI char
             # Defensive exception handling for BrokenPipeError: Expected XX but got YY
-            print("TimeoutError/BrokenPipeError in building display, attempt " + str(self._debug_reset_counter) + ", retrying:\n", te)
+            # Defensive exception handling for ConnectionError: Failed to request hostname
+            print("TimeoutError/BrokenPipeError/ConnectionError in building display, attempt " + str(self._debug_reset_counter) + ", retrying:\n", te)
             self._debug_reset_counter += 1
             self._debug_total_reset_counter += 1
 
